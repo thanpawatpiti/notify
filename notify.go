@@ -8,22 +8,29 @@ import (
 
 // Notifier is the interface that all notification providers must implement.
 type Notifier interface {
-	// Send sends a message to the provider.
-	Send(ctx context.Context, msg Message) error
+	// Send sends a payload to the provider.
+	// payload can be:
+	// - string: Simple text message.
+	// - notify.CommonMessage: Generic rich message (Text + Image).
+	// - Provider-specific structs: For advanced features (e.g., line.FlexMessage, discord.Embed).
+	Send(ctx context.Context, payload interface{}) error
 }
 
-// Message represents the content of the notification.
-type Message struct {
-	// Title is the subject or title of the message (optional, supported by some providers like Discord/Telegram/Teams).
+// CommonMessage represents a generic rich message supported by most providers.
+// Use this for simple cross-platform notifications.
+type CommonMessage struct {
+	// Title is the subject or title of the message.
 	Title string
 	// Content is the main body of the message.
 	Content string
-	// ImageURL is an optional URL to an image to include in the notification.
+	// ImageURL is an optional URL to an image.
 	ImageURL string
-	// Color is the color of the embed/message (optional, supported by Discord/Teams).
-	// Format: Hex string e.g. "#FF0000" or integer value.
+	// Color is the color of the embed/message (Hex string e.g. "#FF0000").
 	Color string
 }
+
+// Message is an alias for CommonMessage for backward compatibility (optional, but good for transition).
+type Message = CommonMessage
 
 // Options holds common configuration for providers.
 type Options struct {
@@ -41,7 +48,6 @@ func WithHTTPClient(client *http.Client) Option {
 }
 
 // WithTimeout configures a default timeout for the HTTP client if one isn't already set.
-// Note: This is a convenience helper; usually it's better to set timeout on the client or context.
 func WithTimeout(d time.Duration) Option {
 	return func(o *Options) {
 		if o.HTTPClient == nil {

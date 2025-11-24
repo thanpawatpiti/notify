@@ -35,37 +35,46 @@ func New(webhookURL string, opts ...notify.Option) *Provider {
 }
 
 // Send sends a message via Discord Webhook.
-func (p *Provider) Send(ctx context.Context, msg notify.Message) error {
+// payload can be:
+// - string: Simple text message.
+// - notify.CommonMessage: Generic rich message (Text + Image).
+// - discord.WebhookPayload: Full webhook payload.
+// - discord.Embed: Single embed.
+func (p *Provider) Send(ctx context.Context, payload interface{}) error {
 	if p.webhookURL == "" {
 		return fmt.Errorf("discord webhook url is missing")
 	}
 
-	payload := map[string]interface{}{}
+	var wp WebhookPayload
 
-	// Create an embed for "beautiful" notification
-	embed := map[string]interface{}{
-		"description": msg.Content,
-	}
-
-	if msg.Title != "" {
-		embed["title"] = msg.Title
-	}
-
-	if msg.ImageURL != "" {
-		embed["image"] = map[string]string{
-			"url": msg.ImageURL,
+	switch v := payload.(type) {
+	case string:
+		wp.Content = v
+	case notify.CommonMessage:
+		embed := Embed{
+			Description: v.Content,
 		}
-	}
-
-	if msg.Color != "" {
-		if colorInt, err := parseColor(msg.Color); err == nil {
-			embed["color"] = colorInt
+		if v.Title != "" {
+			embed.Title = v.Title
 		}
+		if v.ImageURL != "" {
+			embed.Image = &EmbedImage{URL: v.ImageURL}
+		}
+		if v.Color != "" {
+			if colorInt, err := parseColor(v.Color); err == nil {
+				embed.Color = colorInt
+			}
+		}
+		wp.Embeds = []Embed{embed}
+	case WebhookPayload:
+		wp = v
+	case Embed:
+		wp.Embeds = []Embed{v}
+	default:
+		return fmt.Errorf("unsupported payload type: %T", v)
 	}
 
-	payload["embeds"] = []interface{}{embed}
-
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(wp)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}

@@ -37,39 +37,60 @@ func New(token, chatID string, opts ...notify.Option) *Provider {
 }
 
 // Send sends a message via Telegram.
-func (p *Provider) Send(ctx context.Context, msg notify.Message) error {
+// payload can be:
+// - string: Simple text message.
+// - notify.CommonMessage: Generic rich message (Text + Image).
+// - telegram.Payload: Full API payload.
+func (p *Provider) Send(ctx context.Context, payload interface{}) error {
 	if p.token == "" || p.chatID == "" {
 		return fmt.Errorf("telegram token or chatID is missing")
 	}
 
-	var method string
-	var payload interface{}
+	var method string = "sendMessage"
+	var reqPayload Payload
 
-	text := msg.Content
-	if msg.Title != "" {
-		text = fmt.Sprintf("*%s*\n%s", msg.Title, msg.Content)
-	}
-
-	if msg.ImageURL != "" {
-		method = "sendPhoto"
-		payload = map[string]interface{}{
-			"chat_id":    p.chatID,
-			"photo":      msg.ImageURL,
-			"caption":    text,
-			"parse_mode": "Markdown",
+	switch v := payload.(type) {
+	case string:
+		reqPayload = Payload{
+			ChatID:    p.chatID,
+			Text:      v,
+			ParseMode: "Markdown",
 		}
-	} else {
-		method = "sendMessage"
-		payload = map[string]interface{}{
-			"chat_id":    p.chatID,
-			"text":       text,
-			"parse_mode": "Markdown",
+	case notify.CommonMessage:
+		text := v.Content
+		if v.Title != "" {
+			text = fmt.Sprintf("*%s*\n%s", v.Title, v.Content)
 		}
+		if v.ImageURL != "" {
+			method = "sendPhoto"
+			reqPayload = Payload{
+				ChatID:    p.chatID,
+				Photo:     v.ImageURL,
+				Caption:   text,
+				ParseMode: "Markdown",
+			}
+		} else {
+			reqPayload = Payload{
+				ChatID:    p.chatID,
+				Text:      text,
+				ParseMode: "Markdown",
+			}
+		}
+	case Payload:
+		reqPayload = v
+		if reqPayload.ChatID == "" {
+			reqPayload.ChatID = p.chatID
+		}
+		if reqPayload.Photo != "" {
+			method = "sendPhoto"
+		}
+	default:
+		return fmt.Errorf("unsupported payload type: %T", v)
 	}
 
 	url := fmt.Sprintf("%s%s/%s", telegramAPIBase, p.token, method)
 
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(reqPayload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}

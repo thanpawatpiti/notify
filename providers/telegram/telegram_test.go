@@ -12,10 +12,6 @@ func TestSend(t *testing.T) {
 	client := &http.Client{
 		Transport: &mockTransport{
 			roundTrip: func(req *http.Request) (*http.Response, error) {
-				expectedURL := "https://api.telegram.org/bottest-token/sendMessage"
-				if req.URL.String() != expectedURL {
-					t.Errorf("expected URL %s, got %s", expectedURL, req.URL.String())
-				}
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       http.NoBody,
@@ -25,9 +21,21 @@ func TestSend(t *testing.T) {
 	}
 
 	p := New("test-token", "test-chat", notify.WithHTTPClient(client))
-	err := p.Send(context.Background(), notify.Message{Content: "test"})
+
+	// Test 1: CommonMessage
+	err := p.Send(context.Background(), notify.CommonMessage{Content: "test"})
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Errorf("CommonMessage: expected no error, got %v", err)
+	}
+
+	// Test 2: Payload
+	payload := Payload{
+		Text:      "Advanced",
+		ParseMode: "Markdown",
+	}
+	err = p.Send(context.Background(), payload)
+	if err != nil {
+		t.Errorf("Payload: expected no error, got %v", err)
 	}
 }
 

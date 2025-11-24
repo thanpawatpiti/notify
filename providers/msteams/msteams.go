@@ -32,62 +32,88 @@ func New(webhookURL string, opts ...notify.Option) *Provider {
 	return p
 }
 
-// Send sends a message via Microsoft Teams Incoming Webhook using Adaptive Cards.
-func (p *Provider) Send(ctx context.Context, msg notify.Message) error {
+// Send sends a message via Microsoft Teams Incoming Webhook.
+// payload can be:
+// - string: Simple text message.
+// - notify.CommonMessage: Generic rich message (Text + Image).
+// - msteams.AdaptiveCard: Full Adaptive Card.
+func (p *Provider) Send(ctx context.Context, payload interface{}) error {
 	if p.webhookURL == "" {
 		return fmt.Errorf("msteams webhook url is missing")
 	}
 
-	// Construct Adaptive Card
-	card := map[string]interface{}{
-		"type": "message",
-		"attachments": []interface{}{
-			map[string]interface{}{
-				"contentType": "application/vnd.microsoft.card.adaptive",
-				"content": map[string]interface{}{
-					"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-					"type":    "AdaptiveCard",
-					"version": "1.2",
-					"body":    []interface{}{},
+	var card AdaptiveCard
+
+	switch v := payload.(type) {
+	case string:
+		card = AdaptiveCard{
+			Type:    "AdaptiveCard",
+			Version: "1.2",
+			Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+			Body: []interface{}{
+				TextBlock{
+					Type: "TextBlock",
+					Text: v,
+					Wrap: true,
 				},
+			},
+		}
+	case notify.CommonMessage:
+		body := []interface{}{}
+		if v.Title != "" {
+			body = append(body, TextBlock{
+				Type:   "TextBlock",
+				Text:   v.Title,
+				Weight: "Bolder",
+				Size:   "Medium",
+			})
+		}
+		if v.Content != "" {
+			body = append(body, TextBlock{
+				Type: "TextBlock",
+				Text: v.Content,
+				Wrap: true,
+			})
+		}
+		if v.ImageURL != "" {
+			body = append(body, Image{
+				Type: "Image",
+				URL:  v.ImageURL,
+				Size: "Stretch",
+			})
+		}
+		card = AdaptiveCard{
+			Type:    "AdaptiveCard",
+			Version: "1.2",
+			Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+			Body:    body,
+		}
+	case AdaptiveCard:
+		card = v
+		if card.Schema == "" {
+			card.Schema = "http://adaptivecards.io/schemas/adaptive-card.json"
+		}
+		if card.Type == "" {
+			card.Type = "AdaptiveCard"
+		}
+		if card.Version == "" {
+			card.Version = "1.2"
+		}
+	default:
+		return fmt.Errorf("unsupported payload type: %T", v)
+	}
+
+	wp := WebhookPayload{
+		Type: "message",
+		Attachments: []Attachment{
+			{
+				ContentType: "application/vnd.microsoft.card.adaptive",
+				Content:     card,
 			},
 		},
 	}
 
-	bodyContent := []interface{}{}
-
-	// Title
-	if msg.Title != "" {
-		bodyContent = append(bodyContent, map[string]interface{}{
-			"type":   "TextBlock",
-			"text":   msg.Title,
-			"weight": "Bolder",
-			"size":   "Medium",
-		})
-	}
-
-	// Content
-	if msg.Content != "" {
-		bodyContent = append(bodyContent, map[string]interface{}{
-			"type": "TextBlock",
-			"text": msg.Content,
-			"wrap": true,
-		})
-	}
-
-	// Image
-	if msg.ImageURL != "" {
-		bodyContent = append(bodyContent, map[string]interface{}{
-			"type": "Image",
-			"url":  msg.ImageURL,
-			"size": "Stretch",
-		})
-	}
-
-	// Assign body to card
-	card["attachments"].([]interface{})[0].(map[string]interface{})["content"].(map[string]interface{})["body"] = bodyContent
-
-	body, err := json.Marshal(card)
+	body, err := json.Marshal(wp)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}

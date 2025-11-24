@@ -37,40 +37,61 @@ func New(channelToken, targetID string, opts ...notify.Option) *Provider {
 }
 
 // Send sends a message via LINE Messaging API.
-func (p *Provider) Send(ctx context.Context, msg notify.Message) error {
+// payload can be:
+// - string: Simple text message.
+// - notify.CommonMessage: Generic rich message (Text + Image).
+// - line.FlexMessage: Advanced Flex Message.
+func (p *Provider) Send(ctx context.Context, payload interface{}) error {
 	if p.channelToken == "" || p.targetID == "" {
 		return fmt.Errorf("line channel token or target ID is missing")
 	}
 
 	var messages []interface{}
 
-	// If image is present, send image message
-	if msg.ImageURL != "" {
-		messages = append(messages, map[string]string{
-			"type":               "image",
-			"originalContentUrl": msg.ImageURL,
-			"previewImageUrl":    msg.ImageURL,
-		})
-	}
-
-	// Always send text content if present (or as caption if image exists, but LINE separates them)
-	if msg.Content != "" {
-		text := msg.Content
-		if msg.Title != "" {
-			text = fmt.Sprintf("%s\n%s", msg.Title, msg.Content)
-		}
+	switch v := payload.(type) {
+	case string:
 		messages = append(messages, map[string]string{
 			"type": "text",
-			"text": text,
+			"text": v,
 		})
+	case notify.CommonMessage:
+		if v.ImageURL != "" {
+			messages = append(messages, map[string]string{
+				"type":               "image",
+				"originalContentUrl": v.ImageURL,
+				"previewImageUrl":    v.ImageURL,
+			})
+		}
+		if v.Content != "" {
+			text := v.Content
+			if v.Title != "" {
+				text = fmt.Sprintf("%s\n%s", v.Title, v.Content)
+			}
+			messages = append(messages, map[string]string{
+				"type": "text",
+				"text": text,
+			})
+		}
+	case FlexMessage:
+		messages = append(messages, map[string]interface{}{
+			"type":     "flex",
+			"altText":  v.AltText,
+			"contents": v.Contents,
+		})
+	default:
+		return fmt.Errorf("unsupported payload type: %T", v)
 	}
 
-	payload := map[string]interface{}{
+	if len(messages) == 0 {
+		return fmt.Errorf("no messages to send")
+	}
+
+	reqPayload := map[string]interface{}{
 		"to":       p.targetID,
 		"messages": messages,
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := json.Marshal(reqPayload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}

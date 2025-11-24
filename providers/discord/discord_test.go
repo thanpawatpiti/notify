@@ -16,8 +16,20 @@ func TestSend(t *testing.T) {
 	defer server.Close()
 
 	p := New(server.URL)
-	err := p.Send(context.Background(), notify.Message{Content: "test"})
+
+	// Test 1: CommonMessage
+	err := p.Send(context.Background(), notify.CommonMessage{Content: "test"})
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Errorf("CommonMessage: expected no error, got %v", err)
+	}
+
+	// Test 2: Embed
+	embed := Embed{
+		Title:       "Test Embed",
+		Description: "Desc",
+	}
+	err = p.Send(context.Background(), embed)
+	if err != nil {
+		t.Errorf("Embed: expected no error, got %v", err)
 	}
 }

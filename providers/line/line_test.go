@@ -3,26 +3,12 @@ package line
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/thanpawatpiti/notify"
 )
 
 func TestSend(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-token" {
-			t.Errorf("expected Authorization header 'Bearer test-token', got %s", r.Header.Get("Authorization"))
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	// Override the API endpoint for testing by using a custom HTTP client that redirects requests?
-	// Actually, since the URL is hardcoded in the package, we can't easily swap it without exporting it or using a variable.
-	// For "Professional" code, we should probably allow overriding the base URL or just mock the transport.
-	// Let's use a custom transport to intercept the request to the hardcoded URL.
-
 	client := &http.Client{
 		Transport: &mockTransport{
 			roundTrip: func(req *http.Request) (*http.Response, error) {
@@ -38,9 +24,30 @@ func TestSend(t *testing.T) {
 	}
 
 	p := New("test-token", "test-user", notify.WithHTTPClient(client))
-	err := p.Send(context.Background(), notify.Message{Content: "test"})
+
+	// Test 1: CommonMessage
+	err := p.Send(context.Background(), notify.CommonMessage{Content: "test"})
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Errorf("CommonMessage: expected no error, got %v", err)
+	}
+
+	// Test 2: FlexMessage
+	flexMsg := FlexMessage{
+		AltText: "Flex",
+		Contents: BubbleContainer{
+			Type: "bubble",
+			Body: &BoxComponent{
+				Type:   "box",
+				Layout: "vertical",
+				Contents: []FlexComponent{
+					TextComponent{Type: "text", Text: "Hello"},
+				},
+			},
+		},
+	}
+	err = p.Send(context.Background(), flexMsg)
+	if err != nil {
+		t.Errorf("FlexMessage: expected no error, got %v", err)
 	}
 }
 
